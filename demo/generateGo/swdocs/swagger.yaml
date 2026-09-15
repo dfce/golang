@@ -1,0 +1,31 @@
+definitions:
+  base.Body:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+      trace_id:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: 基于 Cin + GORM + Redis 封装的高性能后端脚手架
+  title: 为服务 API 接口文档
+  version: "1.0"
+paths:
+  /checkpost:
+    post:
+      consumes:
+      - application/json
+      description: 测试各类post请求参数数打印 以及Auth 验证
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/base.Body'
+      summary: 测试各类post请求参数数打印 以及Auth 验证
+      tags:
+      - Demo模块
+swagger: "2.0"

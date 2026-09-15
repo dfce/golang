@@ -1,0 +1,18 @@
+dist/
+# .env*
+.env
+docs/
+logs/
+package-lock.json
+.vscode
+yarn.lock
+
+public/
+
+test
+tests
+
+**/.DS_Store
+*.tar
+*.zip
+*.db
