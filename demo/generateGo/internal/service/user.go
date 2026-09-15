@@ -42,10 +42,10 @@ func (s *UserService) Login(ctx context.Context, body model.UserLogin) (string, 
 	var Login = &model.UserLogin{
 		Username: body.Username,
 		Password: body.Password,
-		Confrim:  body.Confrim,
+		Confirm:  body.Confirm,
 	}
 
-	if Login.Confrim != Login.Password {
+	if Login.Confirm != Login.Password {
 		return "", errors.New("确认密码不一致")
 	}
 
