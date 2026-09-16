@@ -3,83 +3,97 @@ package service
 import (
 	"context"
 	"errors"
-	"generatego/internal/httpserver/middleware"
+	"net/http"
+	"strconv"
+
 	"generatego/internal/model"
 	"generatego/internal/repository"
+	"generatego/pkg/apperror"
 	"generatego/pkg/constant"
 	"generatego/pkg/jwt"
-	"strconv"
-	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService struct {
 	*BaseService
 	repo  *repository.UserRepository
 	redis *repository.RedisRepository
+	token *jwt.Service
 }
 
-func NewUserService(repo *repository.UserRepository, redis *repository.RedisRepository, logger *zap.Logger) *UserService {
-	return &UserService{&BaseService{Logger: logger}, repo, redis}
+func NewUserService(repo *repository.UserRepository, redis *repository.RedisRepository, token *jwt.Service, logger *zap.Logger) *UserService {
+	return &UserService{
+		BaseService: &BaseService{Logger: logger},
+		repo:        repo,
+		redis:       redis,
+		token:       token,
+	}
 }
 
 func (u *UserService) Create(ctx context.Context, body model.CreateUser) (int64, error) {
-	var User = &model.User{
-		Username: body.Username,
-		Password: body.Password,
-		Email:    body.Email,
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return 0, apperror.Wrap(err, http.StatusInternalServerError, "密码处理失败")
 	}
 
-	result := u.repo.CreateUser(ctx, User)
+	user := &model.User{
+		Username: body.Username,
+		Password: string(passwordHash),
+		Email:    body.Email,
+		Status:   1,
+	}
+
+	result := u.repo.CreateUser(ctx, user)
 	if result.Error != nil {
 		return 0, result.Error
 	}
 	return result.RowsAffected, nil
 }
 
-func (s *UserService) Login(ctx context.Context, body model.UserLogin) (string, error) {
-	var Login = &model.UserLogin{
-		Username: body.Username,
-		Password: body.Password,
-		Confirm:  body.Confirm,
+func (u *UserService) Login(ctx context.Context, body model.UserLogin) (string, error) {
+	if !u.redis.Enabled() {
+		return "", apperror.ErrRedisDisabled
+	}
+	if u.token == nil {
+		return "", apperror.ServiceUnavailable("JWT 认证服务未配置")
 	}
 
-	if Login.Confirm != Login.Password {
-		return "", errors.New("确认密码不一致")
-	}
-
-	user, err := s.repo.GetLoginUser(ctx, Login.Username, Login.Password)
+	user, err := u.repo.GetLoginUser(ctx, body.Username)
 	if err != nil {
 		return "", err
 	}
 
-	if user == nil {
-		return "", errors.New("用户不存在")
+	if user == nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)) != nil {
+		return "", apperror.Unauthorized("用户名或密码错误")
 	}
 
-	var info jwt.UserInfo
-	info = jwt.UserInfo{
+	info := jwt.UserInfo{
 		Id:   user.Id,
 		Name: user.Username,
 	}
-
-	token, err := jwt.GenerateToken(info)
+	token, err := u.token.GenerateToken(info)
 	if err != nil {
-		return "", err
+		return "", apperror.Wrap(err, http.StatusInternalServerError, "生成认证令牌失败")
 	}
 
-	// 判定登陆成功后设置 token
-	tokenKey := middleware.AuthUserKey + ":" + strconv.FormatInt(info.Id, 10)
-	expireDuration := time.Duration(constant.JwtExpire) * time.Second
-	s.redis.Set(ctx, tokenKey, token, expireDuration)
+	tokenKey := constant.AuthUserKey + ":" + strconv.FormatInt(info.Id, 10)
+	expireDuration := u.token.Expiry()
+	if err := u.redis.Set(ctx, tokenKey, token, expireDuration); err != nil {
+		if errors.Is(err, apperror.ErrRedisDisabled) {
+			return "", err
+		}
+		return "", apperror.Wrap(err, http.StatusServiceUnavailable, "认证服务暂不可用")
+	}
+
 	return token, nil
 }
 
-func (s *UserService) List(ctx context.Context, query model.GetUser) ([]model.GetUserRes, error) {
-
-	userinfo := s.Userinfo(ctx)
-	s.CtxLog(ctx).Debug("current User: ", zap.Any("uinfo", userinfo))
+func (u *UserService) List(ctx context.Context, query model.GetUser) ([]model.GetUserRes, error) {
+	if userInfo, ok := u.Userinfo(ctx); ok {
+		u.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.Id))
+	}
 
 	queryOpt := model.GetUserListOption{
 		Id:      query.Id,
@@ -89,12 +103,12 @@ func (s *UserService) List(ctx context.Context, query model.GetUser) ([]model.Ge
 		OrderBy: "",
 	}
 
-	if query.Size != 0 {
+	if query.Size > 0 {
 		queryOpt.Limit = query.Size
 	}
-	if query.Page != 0 {
+	if query.Page > 0 {
 		queryOpt.Offset = (query.Page - 1) * queryOpt.Limit
 	}
-	// time.Sleep(3 * time.Second)
-	return s.repo.GetList(ctx, queryOpt)
+
+	return u.repo.GetList(ctx, queryOpt)
 }

@@ -14,6 +14,8 @@ import (
 	"generatego/internal/platform/datastore"
 	"generatego/internal/repository"
 	"generatego/internal/service"
+	"generatego/pkg/jwt"
+	"generatego/pkg/util"
 )
 
 type App struct {
@@ -25,8 +27,22 @@ type App struct {
 }
 
 func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {
+	var tokenService *jwt.Service
+	var err error
+	if cfg.Auth.Enabled {
+		tokenService, err = jwt.NewService(jwt.Config{
+			SecretKey: cfg.Auth.SecretKey,
+			Expiry:    cfg.Auth.TokenExpiry,
+			Issuer:    cfg.Auth.Issuer,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("configure JWT service: %w", err)
+		}
+	} else {
+		logger.Info("JWT authentication disabled")
+	}
 
-	dbs, err := datastore.OpenDatabases(cfg.Databases, logger)
+	dbs, err := datastore.OpenDatabases(cfg.Databases, logger, util.IsDev(cfg.App.ENV))
 	if err != nil {
 		return nil, err
 	}
@@ -34,13 +50,13 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, err
 	redisClient, err := datastore.OpenRedis(ctx, cfg.Redis, logger)
 	if err != nil {
 		datastore.CloseDatabases(dbs, logger)
-		return nil, err
+		return nil, fmt.Errorf("connect Redis: %w", err)
 	}
 
 	repos := repository.NewRegistry(dbs, redisClient)
-	services := service.NewRegistry(repos, logger)
+	services := service.NewRegistry(repos, tokenService, logger)
 
-	router := router.NewRouter(cfg, logger, services, redisClient)
+	router := router.NewRouter(cfg, logger, services, redisClient, tokenService)
 	return &App{
 		cfg:    cfg,
 		logger: logger,

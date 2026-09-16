@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"generatego/pkg/util"
+	"os"
 	"strings"
 	"time"
 
@@ -28,10 +29,11 @@ type AppConfig struct {
 	ENV  string
 }
 type HTTPConfig struct {
-	Port         string
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout  time.Duration
+	Port           string
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	IdleTimeout    time.Duration
+	RequestTimeout time.Duration
 }
 
 func (c HTTPConfig) Addr() string {
@@ -40,12 +42,15 @@ func (c HTTPConfig) Addr() string {
 
 type LogConfig struct {
 	Level string
+	Dir   string
+	Mode  string
 }
 
 type AuthConfig struct {
-	Enabled   bool
-	Token     string
-	SecretKey string
+	Enabled     bool
+	SecretKey   string
+	TokenExpiry time.Duration
+	Issuer      string
 }
 
 type DatabaseConfig struct {
@@ -73,7 +78,9 @@ func Load() (*Config, error) {
 	env := util.GetEnv("ENV", "dev")
 	// 开发环境获取本地 .env 的配置项 加载Config
 	if util.IsDev(env) {
-		_ = godotenv.Load()
+		if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("load .env: %w", err)
+		}
 		env = util.GetEnv("ENV", env)
 	}
 
@@ -83,13 +90,22 @@ func Load() (*Config, error) {
 			ENV:  env,
 		},
 		HTTP: HTTPConfig{
-			Port:         util.GetEnv("APP_PORT", "8080"),
-			ReadTimeout:  util.DurationEnv("HTTP_READ_TIMEOUT", 5*time.Second),
-			WriteTimeout: util.DurationEnv("HTTP_WRITE_TIMEOUT", 10*time.Second),
-			IdleTimeout:  util.DurationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
+			Port:           util.GetEnv("APP_PORT", "8080"),
+			ReadTimeout:    util.DurationEnv("HTTP_READ_TIMEOUT", 5*time.Second),
+			WriteTimeout:   util.DurationEnv("HTTP_WRITE_TIMEOUT", 10*time.Second),
+			IdleTimeout:    util.DurationEnv("HTTP_IDLE_TIMEOUT", 60*time.Second),
+			RequestTimeout: util.DurationEnv("HTTP_REQUEST_TIMEOUT", 2*time.Second),
 		},
 		Log: LogConfig{
 			Level: util.GetEnv("LOG_LEVEL", "info"),
+			Dir:   util.GetEnv("LOG_DIR", "logs"),
+			Mode:  util.GetEnv("LOG_MOD", "0"),
+		},
+		Auth: AuthConfig{
+			Enabled:     util.BoolEnv("AUTH_ENABLED", true),
+			SecretKey:   util.GetEnv("JWT_SECRET_KEY", ""),
+			TokenExpiry: util.DurationEnv("JWT_TOKEN_EXPIRY", 2*time.Hour),
+			Issuer:      util.GetEnv("JWT_ISSUER", util.GetEnv("APP_NAME", "generate_go")),
 		},
 		Redis: RedisConfig{
 			Enabled:      util.BoolEnv("REDIS_ENABLED", false),
@@ -103,8 +119,15 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if cfg.Auth.Enabled && cfg.Auth.SecretKey == "" {
+		if !util.IsDev(cfg.App.ENV) {
+			return nil, errors.New("JWT_SECRET_KEY must be configured outside development")
+		}
+		cfg.Auth.SecretKey = "dev-only-secret-key-change-me-32-bytes"
+	}
+
 	// databases
-	databases, err := loadDatabaseConfig()
+	databases, err := loadDatabaseConfig(cfg.App.ENV)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +136,7 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func loadDatabaseConfig() ([]DatabaseConfig, error) {
+func loadDatabaseConfig(env string) ([]DatabaseConfig, error) {
 	names := util.SplitSCV(util.GetEnv("DB_CONNECTIONS", "primary"))
 	if len(names) == 0 {
 		return nil, errors.New("DB_CONNECTIONS must contain at least one database name")
@@ -124,10 +147,17 @@ func loadDatabaseConfig() ([]DatabaseConfig, error) {
 	for _, name := range names {
 		prefix := "DB_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_"
 		driver := util.GetEnv(prefix+"DRIVER", defaultDBDriver(name))
-		dsn := util.GetEnv(prefix+"DSN", defaultDBDSN(name, driver))
+		dsnFallback := ""
+		if util.IsDev(env) {
+			dsnFallback = defaultDBDSN(name, driver)
+		}
+		dsn := util.GetEnv(prefix+"DSN", dsnFallback)
 
-		if driver == "" || dsn == "" {
-			return nil, fmt.Errorf("database %q requires %sDRIVER and %sDSN", name, prefix, prefix)
+		if driver == "" {
+			return nil, fmt.Errorf("database %q requires %sDRIVER", name, prefix)
+		}
+		if dsn == "" {
+			return nil, fmt.Errorf("database %q requires %sDSN", name, prefix)
 		}
 
 		databases = append(databases, DatabaseConfig{
@@ -136,7 +166,7 @@ func loadDatabaseConfig() ([]DatabaseConfig, error) {
 			DSN:             dsn,
 			MaxOpenConns:    util.IntEnv(prefix+"MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    util.IntEnv(prefix+"MAX_IDLE_CONNS", 25),
-			ConnMaxLifetime: util.DurationEnv(prefix+"CONN_MAX_LIFETIME", 25),
+			ConnMaxLifetime: util.DurationEnv(prefix+"CONN_MAX_LIFETIME", 25*time.Minute),
 			AutoMigrate:     util.BoolEnv(prefix+"AUTO_MIGRATE", false),
 		})
 	}

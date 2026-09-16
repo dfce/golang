@@ -14,8 +14,9 @@ type DemoRepository struct {
 }
 
 type CheckResult struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	Enabled bool   `json:"enabled"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
 }
 
 func NewDemoRepository(dbs datastore.Databases, redis *datastore.RedisClient) *DemoRepository {
@@ -44,13 +45,13 @@ func (d *DemoRepository) CheckDatabases(ctx context.Context) map[string]CheckRes
 
 func (d *DemoRepository) CheckRedis(ctx context.Context) CheckResult {
 	if d.redis == nil {
-		return CheckResult{OK: true}
+		return CheckResult{Enabled: false, OK: true}
 	}
 
 	if err := d.redis.Ping(ctx).Err(); err != nil {
-		return CheckResult{OK: false, Error: err.Error()}
+		return CheckResult{Enabled: true, OK: false, Error: err.Error()}
 	}
-	return CheckResult{OK: true}
+	return CheckResult{Enabled: true, OK: true}
 }
 
 func (r *DemoRepository) TestTransaction() error {

@@ -24,12 +24,13 @@ func (u *UserHandler) Create(c *gin.Context) {
 
 	body, msg, err := myvalidator.ValidatParam[model.CreateUser](c, binding.JSON)
 	if err != nil {
-		response.ValidatErr(c, msg)
+		response.ValidationError(c, msg)
 		return
 	}
 
-	if _, err := u.service.Create(c, *body); err != nil {
-		response.JSON(c, 400, map[string]any{"error": err.Error()})
+	if _, err := u.service.Create(c.Request.Context(), *body); err != nil {
+		u.logger.Error("create user failed", zap.Error(err))
+		response.WriteError(c, err)
 		return
 	}
 	response.OK(c, "")
@@ -39,13 +40,14 @@ func (u *UserHandler) Login(c *gin.Context) {
 
 	body, msg, err := myvalidator.ValidatParam[model.UserLogin](c, binding.JSON)
 	if err != nil {
-		response.ValidatErr(c, msg)
+		response.ValidationError(c, msg)
 		return
 	}
 
-	token, err := u.service.Login(c, *body)
+	token, err := u.service.Login(c.Request.Context(), *body)
 	if err != nil {
-		response.JSON(c, 400, map[string]any{"error": err.Error()})
+		u.logger.Error("user login failed", zap.Error(err))
+		response.WriteError(c, err)
 		return
 	}
 	response.OK(c, token)
@@ -55,15 +57,15 @@ func (h *UserHandler) List(c *gin.Context) {
 
 	req, msg, err := myvalidator.ValidatParam[model.GetUser](c, binding.Query)
 	if err != nil {
-		response.ValidatErr(c, msg)
+		response.ValidationError(c, msg)
 		return
 	}
 
 	// 通过c.Request.Context() 获取被注入了超时的ctx
 	list, err := h.service.List(c.Request.Context(), *req)
-	// list, err := h.service.List(c, *req)
 	if err != nil {
-		response.JSON(c, 400, map[string]any{"error": err.Error()})
+		h.logger.Error("list users failed", zap.Error(err))
+		response.WriteError(c, err)
 		return
 	}
 

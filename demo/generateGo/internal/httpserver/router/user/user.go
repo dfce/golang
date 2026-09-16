@@ -6,6 +6,7 @@ import (
 	"generatego/internal/httpserver/router/registry"
 	"generatego/internal/platform/datastore"
 	"generatego/internal/service"
+	"generatego/pkg/jwt"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -18,12 +19,12 @@ func init() {
 	registry.RegisterSubRouters(&userRouter{})
 }
 
-func (u *userRouter) Register(r *gin.Engine, services *service.Registry, logger *zap.Logger, redis *datastore.RedisClient) {
+func (u *userRouter) Register(r *gin.Engine, services *service.Registry, logger *zap.Logger, redis *datastore.RedisClient, token *jwt.Service) {
 	userHandler := handler.NewUserHandler(services.User, logger)
 
 	user := r.Group("/user")
 
 	user.POST("/create", userHandler.Create)
 	user.POST("/login", userHandler.Login)
-	user.GET("/list", middleware.Auth(redis), userHandler.List)
+	user.GET("/list", middleware.Auth(redis, token), userHandler.List)
 }

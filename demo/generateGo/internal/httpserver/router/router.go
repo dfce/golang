@@ -7,6 +7,7 @@ import (
 	"generatego/internal/httpserver/router/registry"
 	"generatego/internal/platform/datastore"
 	"generatego/internal/service"
+	"generatego/pkg/jwt"
 	"generatego/pkg/util"
 	"net/http"
 	"time"
@@ -26,17 +27,11 @@ import (
 	_ "generatego/internal/httpserver/router/user"
 )
 
-func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registry, redis *datastore.RedisClient) *gin.Engine {
-	// 1. 根据全局环境变量设置 Gin 的运行模式
-	// if isDevelopment(cfg.App.ENV) {
-	// 	// 开发环境： 开启详细调试模式
-	// 	// gin.SetMode(gin.DebugMode) // 默认就开启？？？
-	// } else {
-	// 	// 生产/测试环境：关闭控制台 debug 输出
-	// 	gin.SetMode(gin.ReleaseMode)
-	// }
-	if !util.IsDev(cfg.App.ENV) {
-		// if cfg.App.ENV == "prod" {
+func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registry, redis *datastore.RedisClient, token *jwt.Service) *gin.Engine {
+	// gin.SetMode(gin.DebugMode) // 默认开启？？？
+	// 生产/测试环境：关闭控制台 debug 输出
+	isDev := util.IsDev(cfg.App.ENV)
+	if !isDev {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
@@ -46,7 +41,7 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registr
 	*/
 	router := gin.New()
 
-	if util.IsDev(cfg.App.ENV) {
+	if isDev {
 		// 注册 Swagger 路由访问路径 /swagger/index.html
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 	}
@@ -56,7 +51,7 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registr
 	*/
 	router.Use(
 		middleware.TraceID(),
-		middleware.Timeout(2*time.Second),
+		middleware.Timeout(cfg.HTTP.RequestTimeout),
 		gin.CustomRecovery(middleware.Recover(logger)),
 		middleware.RequestInfo(logger, cfg),
 	)
@@ -70,7 +65,7 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registr
 
 	// 加载业务逻辑路由
 	for _, subRouter := range registry.SubRouters {
-		subRouter.Register(router, services, logger, redis)
+		subRouter.Register(router, services, logger, redis, token)
 	}
 
 	return router

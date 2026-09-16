@@ -3,6 +3,7 @@ package registry
 import (
 	"generatego/internal/platform/datastore"
 	"generatego/internal/service"
+	"generatego/pkg/jwt"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ var SubRouters []SubRouter
 type SubRouter interface {
 	// Register 接收Gin的总引擎（或路由组），以及全量的 svcs
 	// Register(gp *gin.Engine, *service.Container)
-	Register(r *gin.Engine, s *service.Registry, logger *zap.Logger, redis *datastore.RedisClient)
+	Register(r *gin.Engine, s *service.Registry, logger *zap.Logger, redis *datastore.RedisClient, token *jwt.Service)
 }
 
 func RegisterSubRouters(routers ...SubRouter) {

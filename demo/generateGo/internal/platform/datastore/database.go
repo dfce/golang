@@ -5,7 +5,6 @@ import (
 	"generatego/internal/config"
 	"generatego/internal/model"
 	"generatego/internal/platform/logging"
-	"generatego/pkg/util"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
@@ -17,7 +16,7 @@ import (
 
 type Databases map[string]*gorm.DB
 
-func OpenDatabases(configs []config.DatabaseConfig, logger *zap.Logger) (Databases, error) {
+func OpenDatabases(configs []config.DatabaseConfig, logger *zap.Logger, isDev bool) (Databases, error) {
 	dbs := make(Databases, len(configs))
 
 	for _, cfg := range configs {
@@ -29,7 +28,7 @@ func OpenDatabases(configs []config.DatabaseConfig, logger *zap.Logger) (Databas
 
 		db, err := gorm.Open(dialector, &gorm.Config{
 			// Logger: gormlogger.Default.LogMode(gormlogger.Warn),
-			Logger: logging.NewGormZapLogger(logger),
+			Logger: logging.NewGormZapLogger(logger, isDev),
 		})
 
 		if err != nil {
@@ -54,10 +53,12 @@ func OpenDatabases(configs []config.DatabaseConfig, logger *zap.Logger) (Databas
 		}
 
 		// 本地测试：自动根据 Go 的struct 创建数据库表
-		if cfg.AutoMigrate && util.IsDev(util.GetEnv("ENV", "-")) {
-			_ = db.AutoMigrate(
-				model.Models...,
-			)
+		if cfg.AutoMigrate && isDev {
+			if err := db.AutoMigrate(model.Models...); err != nil {
+				_ = sqlDB.Close()
+				CloseDatabases(dbs, logger)
+				return nil, fmt.Errorf("auto migrate database %q: %w", cfg.Name, err)
+			}
 		}
 
 		dbs[cfg.Name] = db

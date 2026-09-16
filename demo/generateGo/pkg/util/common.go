@@ -1,10 +1,13 @@
 package util
 
 import (
+	"generatego/pkg/constant"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func GetEnv(key, fallback string) string {
@@ -44,6 +47,13 @@ func transEnv(key string, fallback any) any {
 		parsed, err = strconv.ParseBool(value)
 	case time.Duration:
 		parsed, err = time.ParseDuration(value)
+		if err != nil {
+			var seconds int
+			seconds, err = strconv.Atoi(value)
+			if err == nil {
+				parsed = time.Duration(seconds) * time.Second
+			}
+		}
 	}
 
 	if err != nil {
@@ -71,4 +81,16 @@ func IsDev(env string) bool {
 	default:
 		return false
 	}
+}
+
+// 获取 traceID
+func TraceID(c *gin.Context) string {
+	if traceID := c.GetString(constant.TraceName); traceID != "" {
+		return traceID
+	}
+	if c.Request == nil {
+		return ""
+	}
+	traceID, _ := c.Request.Context().Value(constant.TraceName).(string)
+	return traceID
 }

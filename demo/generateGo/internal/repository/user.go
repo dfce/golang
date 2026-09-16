@@ -21,13 +21,13 @@ func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) *gorm
 	return u.dbs["primary"].WithContext(ctx).Create(user)
 }
 
-func (u *UserRepository) GetLoginUser(ctx context.Context, username, Password string) (*model.User, error) {
+func (u *UserRepository) GetLoginUser(ctx context.Context, username string) (*model.User, error) {
 	var user model.User
 
 	err := u.dbs["primary"].
 		WithContext(ctx).
-		Select("Id", "Username").
-		Where("Username = ? and Password = ?", username, Password).
+		Select("id", "username", "password", "status").
+		Where("username = ? AND status = ?", username, 1).
 		First(&user).Error
 
 	if err != nil {

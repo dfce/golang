@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+
 	"generatego/internal/service"
 	"generatego/pkg/response"
 
@@ -26,7 +28,11 @@ func (d *DemoHandler) TestGet(c *gin.Context) {
 }
 
 func (d *DemoHandler) Ready(c *gin.Context) {
-	res := d.service.Ready(c)
+	res := d.service.Ready(c.Request.Context())
+	if res.Status != "ok" {
+		response.JSON(c, http.StatusServiceUnavailable, res)
+		return
+	}
 	response.OK(c, res)
 }
 
@@ -55,6 +61,11 @@ func (h *DemoHandler) CheckPostInfo(c *gin.Context) {
 }
 
 func (h *DemoHandler) RedisTest(c *gin.Context) {
-	res := h.service.RedisTest(c.Request.Context())
+	res, err := h.service.RedisTest(c.Request.Context())
+	if err != nil {
+		h.logger.Error("redis test failed", zap.Error(err))
+		response.WriteError(c, err)
+		return
+	}
 	response.OK(c, res)
 }

@@ -31,7 +31,6 @@ type CreateUser struct {
 type UserLogin struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
-	Confirm  string `json:"confirm" binding:"required"`
 }
 
 // 查询用户列表参数

@@ -3,9 +3,10 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"generatego/internal/platform/datastore"
 	"time"
+
+	"generatego/internal/platform/datastore"
+	"generatego/pkg/apperror"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -15,20 +16,40 @@ type RedisRepository struct {
 }
 
 func NewRedisRepository(redis *datastore.RedisClient) *RedisRepository {
-	return &RedisRepository{redis}
+	return &RedisRepository{redis: redis}
 }
 
-func (r *RedisRepository) Set(ctx context.Context, key, token string, expriation time.Duration) error {
-	err := r.redis.Set(ctx, key, token, expriation).Err()
-	return err
+func (r *RedisRepository) Enabled() bool {
+	return r != nil && r.redis != nil
+}
+
+func (r *RedisRepository) client() (*datastore.RedisClient, error) {
+	if r == nil || r.redis == nil {
+		return nil, apperror.ErrRedisDisabled
+	}
+	return r.redis, nil
+}
+
+func (r *RedisRepository) Set(ctx context.Context, key, value string, expiration time.Duration) error {
+	client, err := r.client()
+	if err != nil {
+		return err
+	}
+	return client.Set(ctx, key, value, expiration).Err()
 }
 
 // 返回参数：
 // string: 缓存值，不存在则为空“”
 // bool: 代表key是否存在(true=存在, false=不存在/过期)
 // error: 真正的网络故障/Redis服务异常
+// Get returns the cached value, whether it exists, and an infrastructure error.
 func (r *RedisRepository) Get(ctx context.Context, key string) (string, bool, error) {
-	val, err := r.redis.Get(ctx, key).Result()
+	client, err := r.client()
+	if err != nil {
+		return "", false, err
+	}
+
+	val, err := client.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return "", false, nil
 	}
@@ -42,15 +63,15 @@ func (r *RedisRepository) Get(ctx context.Context, key string) (string, bool, er
 // ptr 必须传一个go结构体指针如：&user
 func (r *RedisRepository) GetObj(ctx context.Context, key string, ptr any) (bool, error) {
 	val, ok, err := r.Get(ctx, key)
-	if !ok {
-		return false, nil
-	}
 	if err != nil {
 		return false, err
 	}
-	// unmarshal
+	if !ok {
+		return false, nil
+	}
+
 	if err := json.Unmarshal([]byte(val), ptr); err != nil {
-		return true, err // JSON 解析失败
+		return true, err
 	}
 	return true, nil
 }
@@ -61,32 +82,14 @@ func (r *RedisRepository) SetObj(ctx context.Context, key string, obj any, expir
 	if err != nil {
 		return err
 	}
-	return r.redis.Set(ctx, key, bytes, expiration).Err()
+	return r.Set(ctx, key, string(bytes), expiration)
 }
 
-// 返回 json demo
-func (r *RedisRepository) ScriptResJson(ctx context.Context, key string, resType any) {
-	script := redis.NewScript(`
-		local cjson = cjson
-		return cjson.encode({
-			code=0,
-			balance=100
-		})
-	`)
-	str, _ := script.Run(ctx, r.redis, []string{}).Text()
-
-	type Resp struct {
-		Code    int `json:"code"`
-		Balance int `json:"balance"`
+func (r *RedisRepository) ExecScript(ctx context.Context, script string, keys []string, values ...any) (string, error) {
+	client, err := r.client()
+	if err != nil {
+		return "", err
 	}
-	var res Resp
 
-	json.Unmarshal([]byte(str), &res)
-	fmt.Println("res:", res)
-}
-
-func (r *RedisRepository) ExecScript(ctx context.Context, s string, keys []string, val any) (string, error) {
-	script := redis.NewScript(s)
-	str, err := script.Run(ctx, r.redis, keys, val).Text()
-	return str, err
+	return redis.NewScript(script).Run(ctx, client, keys, values...).Text()
 }

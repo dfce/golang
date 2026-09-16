@@ -1,7 +1,5 @@
 package constant
 
-import "generatego/pkg/util"
-
 /*
 	存放全局共享用常量
 */
@@ -14,10 +12,6 @@ const (
 	TraceName   = "trace_id"
 	TraceHeader = "X-Trace-Id"
 
-	JwtPrefix = "Bearer "
-)
-
-var (
-	JwtKey    = []byte(util.GetEnv("JWT_SECRET_KEY", "config_secret_key"))
-	JwtExpire = util.IntEnv("JWT_TOKEN_EXPIRY", 7200) // Second
+	AuthUserKey = "userInfo"
+	JwtPrefix   = "Bearer "
 )

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"generatego/internal/config"
 	"generatego/pkg/constant"
+	"generatego/pkg/util"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,7 +45,7 @@ func RequestInfo(logger *zap.Logger, cfg *config.Config) gin.HandlerFunc {
 		c.Next()
 
 		// 响应耗时
-		traceId := getTraceId(c)
+		traceId := util.TraceID(c)
 		execTime := time.Since(start)
 		logger.Info(fmt.Sprintf("[%s] Execution time: %d ms", traceId, execTime.Milliseconds()))
 	}
@@ -137,16 +139,32 @@ func getPostData(c *gin.Context, logger *zap.Logger, info *ReqInfo, hasReqInfo *
 func cloneFormValues(postform url.Values) url.Values {
 	form := make(url.Values)
 	for k, v := range postform {
+		if isSensitiveField(k) {
+			form[k] = []string{"[REDACTED]"}
+			continue
+		}
 		form[k] = v
 	}
 	return form
 }
 
-func getTraceId(c *gin.Context) string {
-	// 响应耗时
-	traceId := c.GetString(constant.TraceName)
-	if traceId == "" {
-		traceId = c.Request.Context().Value(constant.TraceName).(string)
+func isSensitiveField(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "password", "passwd", "pwd", "confirm", "confirmation", "token", "secret":
+		return true
+	default:
+		return false
 	}
-	return traceId
+}
+
+func getTraceId(c *gin.Context) string {
+	traceID := c.GetString(constant.TraceName)
+	if traceID != "" {
+		return traceID
+	}
+	if c.Request == nil {
+		return ""
+	}
+	traceID, _ = c.Request.Context().Value(constant.TraceName).(string)
+	return traceID
 }

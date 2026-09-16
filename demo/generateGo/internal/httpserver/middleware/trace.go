@@ -16,7 +16,7 @@ func TraceID() gin.HandlerFunc {
 		}
 
 		setCtx(c, constant.TraceName, traceID)
-		c.Writer.Header().Set(constant.TraceName, traceID)
+		c.Writer.Header().Set(constant.TraceHeader, traceID)
 		c.Next()
 	}
 }

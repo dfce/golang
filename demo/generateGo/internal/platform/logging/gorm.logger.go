@@ -3,9 +3,9 @@ package logging
 import (
 	"context"
 	"errors"
-	"generatego/pkg/constant"
-	"os"
 	"time"
+
+	"generatego/pkg/constant"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm/logger"
@@ -15,12 +15,14 @@ import (
 type GormZapLogger struct {
 	zapLog        *zap.Logger
 	SlowThreshold time.Duration // 慢SQL阈值
+	logSQL        bool
 }
 
-func NewGormZapLogger(loger *zap.Logger) *GormZapLogger {
+func NewGormZapLogger(loger *zap.Logger, logSQL bool) *GormZapLogger {
 	return &GormZapLogger{
 		zapLog:        loger,
 		SlowThreshold: 200 * time.Millisecond, // 超过200ms的SQL视为慢查询
+		logSQL:        logSQL,
 	}
 }
 
@@ -51,23 +53,20 @@ func (l *GormZapLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 
 	var traceID string
 	if ctx != nil {
-		if val := ctx.Value(constant.TraceName); val != "" {
-			if trace_id, ok := val.(string); ok {
-				traceID = trace_id
-			}
-		}
+		traceID, _ = ctx.Value(constant.TraceName).(string)
 	}
 
-	// 组装日志输出字段
 	logFields := []zap.Field{
 		zap.Duration("elapsed", elapsed),
 		zap.Int64("rows", rows),
 	}
 	if traceID != "" {
-		logFields = append(logFields, zap.String("traceID", traceID))
+		logFields = append(logFields, zap.String(constant.TraceName, traceID))
 	}
+	l.traceSQL(sql, elapsed, err, logFields)
+}
 
-	// 1. 如果SQL执行报错（且不是“未找到记录”这种业务正常错误），记为 ERROR日志
+func (l *GormZapLogger) traceSQL(sql string, elapsed time.Duration, err error, logFields []zap.Field) {
 	if err != nil && !errors.Is(err, logger.ErrRecordNotFound) {
 		errFields := append(logFields, zap.Error(err))
 		l.zapLog.Error("SQL EXEC ERROR \n"+sql,
@@ -76,7 +75,6 @@ func (l *GormZapLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 		return
 	}
 
-	// 2. 执行时间超过阈值，记为 WARN级别的慢SQL日志
 	if elapsed > l.SlowThreshold {
 		l.zapLog.Warn("SLOW SQL DETECTED \n"+sql,
 			logFields...,
@@ -84,8 +82,7 @@ func (l *GormZapLogger) Trace(ctx context.Context, begin time.Time, fc func() (s
 		return
 	}
 
-	// 3. 正常情况：非生产环境打印所有执行的 SQL（DEBUG/INFO）
-	if os.Getenv("ENV") != "prod" {
+	if l.logSQL {
 		l.zapLog.Info("SQL TRACE \n"+sql,
 			logFields...,
 		)

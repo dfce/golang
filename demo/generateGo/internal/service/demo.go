@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"generatego/internal/repository"
+	"errors"
+	"net/http"
 	"time"
+
+	"generatego/internal/repository"
+	"generatego/pkg/apperror"
 
 	"go.uber.org/zap"
 )
@@ -16,6 +19,12 @@ type HealthStatus struct {
 	Redis     repository.CheckResult            `json:"redis"`
 }
 
+type RedisTestResponse struct {
+	Code  int    `json:"code"`
+	Msg   string `json:"msg"`
+	Stock int    `json:"stock"`
+}
+
 type DemoService struct {
 	*BaseService
 	repo  *repository.DemoRepository
@@ -23,14 +32,18 @@ type DemoService struct {
 }
 
 func NewDemoService(repo *repository.DemoRepository, redis *repository.RedisRepository, logger *zap.Logger) *DemoService {
-	return &DemoService{&BaseService{Logger: logger}, repo, redis}
+	return &DemoService{
+		BaseService: &BaseService{Logger: logger},
+		repo:        repo,
+		redis:       redis,
+	}
 }
 
 func (d *DemoService) Ready(ctx context.Context) HealthStatus {
 	readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	d.CtxLog(ctx).Info("测试 带入每次请求的 traceID")
+	d.CtxLog(ctx).Info("checking application dependencies")
 
 	status := HealthStatus{
 		Status:    "ok",
@@ -47,32 +60,27 @@ func (d *DemoService) Ready(ctx context.Context) HealthStatus {
 
 	if !status.Redis.OK {
 		status.Status = "degraded"
-		return status
 	}
 	return status
 }
 
 func (d *DemoService) AuthInfo(ctx context.Context) {
-	userinfo := d.Userinfo(ctx)
-	fmt.Printf("cur user: %+v, Id: %d \n", userinfo, userinfo.Id)
+	userInfo, ok := d.Userinfo(ctx)
+	if !ok {
+		d.CtxLog(ctx).Warn("authenticated user information is missing")
+		return
+	}
+	d.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.Id))
 }
 
-func (s *DemoService) RedisTest(ctx context.Context) any {
-	// 模拟 每日 扣减用户数据, 当天未使用则初始化后再扣减
-	// key= test:deduct:${uid}
-	// val = ["扣除值","初始化值","key过期时间"]
-	//  更优的 script 逻辑, 一次执行 setnx
+func (s *DemoService) RedisTest(ctx context.Context) (RedisTestResponse, error) {
 	script := `
-		local cjson = cjson
-
 		local decrby = tonumber(ARGV[1])
 		local initStock = tonumber(ARGV[2])
 		local expire = tonumber(ARGV[3])
 		redis.call("SET", KEYS[1], initStock, "EX", expire, "NX")
 
 		local stock = tonumber(redis.call("GET", KEYS[1]))
-		
-		-- 防止 decrby > 1 时， 扣为负数
 		if stock < decrby then
 			return cjson.encode({code=-1,msg="库存不足",stock=stock})
 		end
@@ -81,29 +89,21 @@ func (s *DemoService) RedisTest(ctx context.Context) any {
 			return cjson.encode({code=-1,msg="今日机会已用完",stock=stock})
 		end
 
-		-- 扣除使用
 		local remain = redis.call("DECRBY", KEYS[1], decrby)
 		return cjson.encode({code=0,msg="使用成功",stock=remain})
 	`
 
-	keys := []string{"test:deduct:1"}
-	vals := []any{3, 10, 300}
-	res, err := s.redis.ExecScript(ctx, script, keys, vals)
+	res, err := s.redis.ExecScript(ctx, script, []string{"test:deduct:1"}, 3, 10, 300)
 	if err != nil {
-		fmt.Println("DemoService RedisTest error", err)
-	}
-	type Resp struct {
-		// code=-1,msg="今日机会已用完",stock=stock
-		Code  int    `json:"code"`
-		Msg   string `json:"msg"`
-		Stock int    `json:"stock"`
+		if errors.Is(err, apperror.ErrRedisDisabled) {
+			return RedisTestResponse{}, err
+		}
+		return RedisTestResponse{}, apperror.Wrap(err, http.StatusServiceUnavailable, "Redis 服务暂不可用")
 	}
 
-	var resp Resp
-	if err := json.Unmarshal([]byte(res), &resp); err != nil {
-		fmt.Println("DemoService RedisTest Unmarshal error", err)
-		return nil
+	var response RedisTestResponse
+	if err := json.Unmarshal([]byte(res), &response); err != nil {
+		return RedisTestResponse{}, apperror.Wrap(err, http.StatusInternalServerError, "Redis 返回数据格式错误")
 	}
-
-	return resp
+	return response, nil
 }

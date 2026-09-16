@@ -2,8 +2,9 @@ package middleware
 
 import (
 	"context"
-	"net/http"
 	"time"
+
+	"generatego/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,12 +27,7 @@ func Timeout(timeout time.Duration) gin.HandlerFunc {
 		if ctx.Err() == context.DeadlineExceeded {
 			// 如果此时Header还没响应前端，输出 504
 			if !c.Writer.Written() {
-				c.AbortWithStatusJSON(
-					http.StatusGatewayTimeout,
-					gin.H{
-						"code":    http.StatusGatewayTimeout,
-						"message": "接口请求超时， 服务中断",
-					})
+				response.WriteError(c, context.DeadlineExceeded)
 			}
 			return
 		}

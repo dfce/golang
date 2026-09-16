@@ -2,10 +2,10 @@ package jwt
 
 import (
 	"errors"
-	"generatego/pkg/constant"
+	"fmt"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
 
 /*
@@ -14,45 +14,85 @@ import (
 type UserInfo struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
-	// Level int    `json:"level"` // 可能变更不及时
-	// ...
 }
 
 type Claims struct {
 	UserInfo
-	jwt.RegisteredClaims
+	jwtv5.RegisteredClaims
 }
 
-func GenerateToken(info UserInfo) (string, error) {
-	expirationTime := time.Now().Add(time.Second * time.Duration(constant.JwtExpire))
+type Config struct {
+	SecretKey string
+	Expiry    time.Duration
+	Issuer    string
+}
 
+type Service struct {
+	secretKey []byte
+	expiry    time.Duration
+	issuer    string
+}
+
+func NewService(cfg Config) (*Service, error) {
+	if len(cfg.SecretKey) < 32 {
+		return nil, errors.New("JWT_SECRET_KEY must contain at least 32 characters")
+	}
+	if cfg.Expiry <= 0 {
+		return nil, errors.New("JWT token expiry must be greater than zero")
+	}
+
+	return &Service{
+		secretKey: []byte(cfg.SecretKey),
+		expiry:    cfg.Expiry,
+		issuer:    cfg.Issuer,
+	}, nil
+}
+
+func (s *Service) Expiry() time.Duration {
+	return s.expiry
+}
+
+func (s *Service) GenerateToken(info UserInfo) (string, error) {
+	now := time.Now()
 	claims := &Claims{
 		UserInfo: info,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		RegisteredClaims: jwtv5.RegisteredClaims{
+			ExpiresAt: jwtv5.NewNumericDate(now.Add(s.expiry)),
+			IssuedAt:  jwtv5.NewNumericDate(now),
+			Issuer:    s.issuer,
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	str, err := token.SignedString(constant.JwtKey)
-	if err != nil {
-		return "", err
-	}
-
-	return str, nil
-	// return constant.JwtPrefix + str, nil
+	token := jwtv5.NewWithClaims(jwtv5.SigningMethodHS256, claims)
+	return token.SignedString(s.secretKey)
 }
 
-func ParseToken(tokenStr string) (*Claims, error) {
+func (s *Service) ParseToken(tokenStr string) (*Claims, error) {
 	claims := &Claims{}
+	options := []jwtv5.ParserOption{
+		jwtv5.WithValidMethods([]string{jwtv5.SigningMethodHS256.Alg()}),
+	}
+	if s.issuer != "" {
+		options = append(options, jwtv5.WithIssuer(s.issuer))
+	}
 
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
-		return constant.JwtKey, nil
-	})
-
+	token, err := jwtv5.ParseWithClaims(
+		tokenStr,
+		claims,
+		func(t *jwtv5.Token) (any, error) {
+			method := "<nil>"
+			if t.Method != nil {
+				method = t.Method.Alg()
+			}
+			if method != jwtv5.SigningMethodHS256.Alg() {
+				return nil, fmt.Errorf("unexpected JWT signing method %q", method)
+			}
+			return s.secretKey, nil
+		},
+		options...,
+	)
 	if err != nil || !token.Valid {
-		return nil, errors.New("Invalid token")
+		return nil, errors.New("invalid token")
 	}
 
 	return claims, nil
