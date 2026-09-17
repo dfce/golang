@@ -1,5 +1,5 @@
 definitions:
-  base.Body:
+  response.Body:
     properties:
       code:
         type: integer
@@ -24,7 +24,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/base.Body'
+            $ref: '#/definitions/response.Body'
       summary: 测试各类post请求参数数打印 以及Auth 验证
       tags:
       - Demo模块

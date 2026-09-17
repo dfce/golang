@@ -5,19 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
-	"generatego/internal/repository"
+	"generatego/internal/port"
 	"generatego/pkg/apperror"
 
 	"go.uber.org/zap"
 )
-
-type HealthStatus struct {
-	Status    string                            `json:"status"`
-	Databases map[string]repository.CheckResult `json:"databases"`
-	Redis     repository.CheckResult            `json:"redis"`
-}
 
 type RedisTestResponse struct {
 	Code  int    `json:"code"`
@@ -27,41 +20,14 @@ type RedisTestResponse struct {
 
 type DemoService struct {
 	*BaseService
-	repo  *repository.DemoRepository
-	redis *repository.RedisRepository
+	scripts port.ScriptStore
 }
 
-func NewDemoService(repo *repository.DemoRepository, redis *repository.RedisRepository, logger *zap.Logger) *DemoService {
+func NewDemoService(scripts port.ScriptStore, logger *zap.Logger) *DemoService {
 	return &DemoService{
 		BaseService: &BaseService{Logger: logger},
-		repo:        repo,
-		redis:       redis,
+		scripts:     scripts,
 	}
-}
-
-func (d *DemoService) Ready(ctx context.Context) HealthStatus {
-	readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-
-	d.CtxLog(ctx).Info("checking application dependencies")
-
-	status := HealthStatus{
-		Status:    "ok",
-		Databases: d.repo.CheckDatabases(readyCtx),
-		Redis:     d.repo.CheckRedis(readyCtx),
-	}
-
-	for _, result := range status.Databases {
-		if !result.OK {
-			status.Status = "degraded"
-			return status
-		}
-	}
-
-	if !status.Redis.OK {
-		status.Status = "degraded"
-	}
-	return status
 }
 
 func (d *DemoService) AuthInfo(ctx context.Context) {
@@ -70,7 +36,7 @@ func (d *DemoService) AuthInfo(ctx context.Context) {
 		d.CtxLog(ctx).Warn("authenticated user information is missing")
 		return
 	}
-	d.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.Id))
+	d.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.UserID))
 }
 
 func (s *DemoService) RedisTest(ctx context.Context) (RedisTestResponse, error) {
@@ -93,7 +59,11 @@ func (s *DemoService) RedisTest(ctx context.Context) (RedisTestResponse, error) 
 		return cjson.encode({code=0,msg="使用成功",stock=remain})
 	`
 
-	res, err := s.redis.ExecScript(ctx, script, []string{"test:deduct:1"}, 3, 10, 300)
+	if s.scripts == nil {
+		return RedisTestResponse{}, apperror.ErrRedisDisabled
+	}
+
+	res, err := s.scripts.ExecScript(ctx, script, []string{"test:deduct:1"}, 3, 10, 300)
 	if err != nil {
 		if errors.Is(err, apperror.ErrRedisDisabled) {
 			return RedisTestResponse{}, err

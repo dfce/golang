@@ -85,10 +85,10 @@ func getLumber(dir, appName string) *lumberjack.Logger {
 	// 日志轮转切割
 	return &lumberjack.Logger{
 		Filename:   filepath.Join(dir, appName+".log"), // 日志文件路径
-		MaxSize:    100,                            	// 单个日志文件最大大小（单位：MB）。超过切割
-		MaxBackups: 30,                             	// 保留旧日志文件个数
-		MaxAge:     7,                              	// 保留旧日志文件最大天数（按天切割的核心保障）
-		Compress:   true,                           	// 是否压缩/gzip 旧日志文件
-		LocalTime:  true,                           	// 使用本地时间命名备份文件
+		MaxSize:    100,                                // 单个日志文件最大大小（单位：MB）。超过切割
+		MaxBackups: 30,                                 // 保留旧日志文件个数
+		MaxAge:     7,                                  // 保留旧日志文件最大天数（按天切割的核心保障）
+		Compress:   true,                               // 是否压缩/gzip 旧日志文件
+		LocalTime:  true,                               // 使用本地时间命名备份文件
 	}
 }

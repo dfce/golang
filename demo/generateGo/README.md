@@ -30,14 +30,21 @@ internal
 │   └── app.go
 ├── config
 │   └── config.go
+├── health
+│   └── health.go
 ├── platform
 │   └── datastore
 │   └── database.go
 │     └── redis.go
+│   └── healthcheck
 │   └── logging
 │     └── gorm.logger.go
 │     └── logger.go
+├── port
+│   └── ports.go
 ├── repository
+├── tokenservice
+│   └── jwt.go
 ├── service
 ├── httpserver
 │   ├── middleware
@@ -58,14 +65,18 @@ flowchart TD
   CMD[cmd/server] --> BOOT[internal/bootstrap]
   BOOT --> CFG[internal/config]
   BOOT --> DS[internal/platform/datastore]
+  BOOT --> HC[internal/platform/healthcheck]
+  BOOT --> PORT[internal/port]
   BOOT --> REPO[internal/repository]
   BOOT --> SVC[internal/service]
   BOOT --> HTTP[internal/httpserver]
   HTTP --> MW[internal/httpserver/middleware]
   HTTP --> HDL[internal/httpserver/handler]
   HDL --> RESP[pkg/response]
-  SVC --> REPO
+  SVC --> PORT
+  REPO --> PORT
   REPO --> DS
+  PORT --> MODEL[internal/model]
 ```
 
 ## Request Flow
@@ -84,7 +95,8 @@ sequenceDiagram
   Gin->>Middleware: traceId, requestInfo, access log, auth
   Middleware->>Handler: request context
   Handler->>Service: business call
-  Service->>Repository: data access call
+  Service->>Port: interface call
+  Port->>Repository: adapter implementation
   Repository->>DBRedis: ping/query/cache
   DBRedis-->>Repository: result
   Repository-->>Service: data
@@ -99,8 +111,17 @@ flowchart LR
   A[config.Load] --> B[logging.New]
   B --> C[datastore.OpenDatabases]
   C --> D[datastore.OpenRedis]
-  D --> E[repository.NewRegistry]
+  D --> E[repository adapters]
   E --> F[service.NewRegistry]
-  F --> G[httpserver.NewRouter]
+  F --> G[explicit route registration]
   G --> H[http.ListenAndServe]
 ```
+
+## Health probes
+
+`GET /livez` only reports whether the process is alive. It does not access
+databases or Redis.
+
+`GET /readyz` checks required dependencies and returns `503` while the service
+is starting, stopping, or a required dependency is unavailable. Redis is
+reported as disabled when it is optional and `REDIS_ENABLED=false`.

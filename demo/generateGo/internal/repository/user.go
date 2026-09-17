@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"errors"
+
 	"generatego/internal/model"
 	"generatego/internal/platform/datastore"
+	"generatego/internal/port"
 
 	"gorm.io/gorm"
 )
@@ -17,8 +19,9 @@ func NewUserRepository(dbs datastore.Databases) *UserRepository {
 	return &UserRepository{dbs}
 }
 
-func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) *gorm.DB {
-	return u.dbs["primary"].WithContext(ctx).Create(user)
+func (u *UserRepository) CreateUser(ctx context.Context, user *model.User) (int64, error) {
+	result := u.dbs["primary"].WithContext(ctx).Create(user)
+	return result.RowsAffected, result.Error
 }
 
 func (u *UserRepository) GetLoginUser(ctx context.Context, username string) (*model.User, error) {
@@ -67,3 +70,5 @@ func (r *UserRepository) GetList(ctx context.Context, opt model.GetUserListOptio
 	err := query.Find(&list).Error
 	return list, err
 }
+
+var _ port.UserRepository = (*UserRepository)(nil)

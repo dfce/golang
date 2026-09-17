@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"generatego/internal/platform/datastore"
+	"generatego/internal/port"
 	"generatego/pkg/apperror"
 
 	"github.com/redis/go-redis/v9"
@@ -93,3 +94,6 @@ func (r *RedisRepository) ExecScript(ctx context.Context, script string, keys []
 
 	return redis.NewScript(script).Run(ctx, client, keys, values...).Text()
 }
+
+var _ port.SessionStore = (*RedisRepository)(nil)
+var _ port.ScriptStore = (*RedisRepository)(nil)

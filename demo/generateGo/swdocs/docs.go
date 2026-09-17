@@ -29,7 +29,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/base.Body"
+                            "$ref": "#/definitions/response.Body"
                         }
                     }
                 }
@@ -37,7 +37,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "base.Body": {
+        "response.Body": {
             "type": "object",
             "properties": {
                 "code": {

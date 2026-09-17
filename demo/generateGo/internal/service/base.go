@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
+	"generatego/internal/port"
 	"generatego/pkg/constant"
-	"generatego/pkg/jwt"
 
 	"go.uber.org/zap"
 )
@@ -20,10 +20,10 @@ func (b *BaseService) CtxLog(ctx context.Context) *zap.Logger {
 	return b.Logger
 }
 
-func (b *BaseService) Userinfo(ctx context.Context) (jwt.UserInfo, bool) {
-	userInfo, ok := ctx.Value(constant.AuthUserKey).(jwt.UserInfo)
+func (b *BaseService) Userinfo(ctx context.Context) (port.Principal, bool) {
+	userInfo, ok := ctx.Value(constant.AuthUserKey).(port.Principal)
 	if !ok {
-		return jwt.UserInfo{}, false
+		return port.Principal{}, false
 	}
 	return userInfo, true
 }

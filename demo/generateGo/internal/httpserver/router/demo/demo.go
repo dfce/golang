@@ -4,36 +4,40 @@ import (
 	"fmt"
 	"generatego/internal/httpserver/handler"
 	"generatego/internal/httpserver/middleware"
-	"generatego/internal/httpserver/router/registry"
-	"generatego/internal/platform/datastore"
+	"generatego/internal/port"
 	"generatego/internal/service"
-	"generatego/pkg/jwt"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-type demoRouter struct{}
-
-// 利用 ini， 在包被加载时， 自动挂载到全局子路由注册
-func init() {
-	registry.RegisterSubRouters(&demoRouter{})
-}
-
-func (d *demoRouter) Register(r *gin.Engine, services *service.Registry, logger *zap.Logger, redis *datastore.RedisClient, token *jwt.Service) {
-	demoHandler := handler.NewDemoHandler(services.Demo, logger)
+func Register(
+	r *gin.Engine,
+	demoService *service.DemoService,
+	logger *zap.Logger,
+	sessions port.SessionStore,
+	tokens port.TokenService,
+	authEnabled bool,
+) {
+	demoHandler := handler.NewDemoHandler(demoService, logger)
 
 	demo := r.Group("/demo")
-
-	demo.GET("/health", demoHandler.Ready)
 
 	demo.GET("/", demoHandler.TestGet)
 	demo.GET("/test", func(c *gin.Context) {
 		fmt.Println("/demo/test")
 	})
 
-	demo.POST("/checkpost", middleware.Auth(redis, token, middleware.WithSkip()), demoHandler.CheckPostInfo)
+	demo.POST(
+		"/checkpost",
+		middleware.Auth(
+			sessions,
+			tokens,
+			middleware.WithEnabled(authEnabled),
+			middleware.WithSkip(),
+		),
+		demoHandler.CheckPostInfo,
+	)
 
 	demo.POST("/redistest", demoHandler.RedisTest)
-
 }

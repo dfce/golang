@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	"generatego/internal/service"
 	"generatego/pkg/response"
 
@@ -24,15 +22,6 @@ func (d *DemoHandler) TestGet(c *gin.Context) {
 		"msg": "demo-test",
 	}
 	d.logger.Info("DemoHandler TestGet", zap.Any("res", res))
-	response.OK(c, res)
-}
-
-func (d *DemoHandler) Ready(c *gin.Context) {
-	res := d.service.Ready(c.Request.Context())
-	if res.Status != "ok" {
-		response.JSON(c, http.StatusServiceUnavailable, res)
-		return
-	}
 	response.OK(c, res)
 }
 

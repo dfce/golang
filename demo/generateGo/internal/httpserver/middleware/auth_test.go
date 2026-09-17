@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"generatego/internal/tokenservice"
 	"generatego/pkg/jwt"
 )
 
@@ -21,10 +22,11 @@ func TestAuthAbortsWhenRedisIsDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	tokens := tokenservice.NewJWTService(tokenService)
 
 	router := gin.New()
 	handlerCalled := false
-	router.GET("/protected", Auth(nil, tokenService), func(c *gin.Context) {
+	router.GET("/protected", Auth(nil, tokens), func(c *gin.Context) {
 		handlerCalled = true
 		c.Status(http.StatusOK)
 	})

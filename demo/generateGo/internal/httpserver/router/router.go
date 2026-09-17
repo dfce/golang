@@ -1,16 +1,15 @@
 package router
 
 import (
-	"context"
 	"generatego/internal/config"
+	"generatego/internal/health"
+	"generatego/internal/httpserver/handler"
 	"generatego/internal/httpserver/middleware"
-	"generatego/internal/httpserver/router/registry"
-	"generatego/internal/platform/datastore"
+	demorouter "generatego/internal/httpserver/router/demo"
+	userrouter "generatego/internal/httpserver/router/user"
+	"generatego/internal/port"
 	"generatego/internal/service"
-	"generatego/pkg/jwt"
 	"generatego/pkg/util"
-	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerfiles "github.com/swaggo/files"
@@ -18,16 +17,16 @@ import (
 	"go.uber.org/zap"
 
 	_ "generatego/swdocs"
-
-	// 解耦 相互import 如果分组各自的目录的情况
-	/*
-		如此才能如下， 引用子路由的包， 并只执行子包的 init 函数来实现自动注册路由表
-	*/
-	_ "generatego/internal/httpserver/router/demo"
-	_ "generatego/internal/httpserver/router/user"
 )
 
-func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registry, redis *datastore.RedisClient, token *jwt.Service) *gin.Engine {
+func NewRouter(
+	cfg *config.Config,
+	logger *zap.Logger,
+	services *service.Registry,
+	sessions port.SessionStore,
+	tokens port.TokenService,
+	readiness *health.Service,
+) *gin.Engine {
 	// gin.SetMode(gin.DebugMode) // 默认开启？？？
 	// 生产/测试环境：关闭控制台 debug 输出
 	isDev := util.IsDev(cfg.App.ENV)
@@ -60,27 +59,14 @@ func NewRouter(cfg *config.Config, logger *zap.Logger, services *service.Registr
 		router.Use(gin.Logger())
 	}
 
-	// Health 用于K8S（Liveness/Readiness探测）等系统监控 健康检查
-	healty(router)
+	healthHandler := handler.NewHealthHandler(readiness)
+	router.GET("/livez", healthHandler.Liveness)
+	router.GET("/readyz", healthHandler.Readiness)
 
-	// 加载业务逻辑路由
-	for _, subRouter := range registry.SubRouters {
-		subRouter.Register(router, services, logger, redis, token)
-	}
+	// Business routes are registered explicitly so the complete route surface
+	// is visible from this composition root.
+	userrouter.Register(router, services.User, logger, sessions, tokens, cfg.Auth.Enabled)
+	demorouter.Register(router, services.Demo, logger, sessions, tokens, cfg.Auth.Enabled)
 
 	return router
-}
-
-func healty(r *gin.Engine) {
-	r.GET("/health", func(c *gin.Context) {
-		_, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-		defer cancel()
-
-		c.JSON(
-			http.StatusOK,
-			gin.H{
-				"status": "healthy",
-			},
-		)
-	})
 }

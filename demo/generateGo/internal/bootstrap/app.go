@@ -10,10 +10,14 @@ import (
 	"go.uber.org/zap"
 
 	"generatego/internal/config"
+	"generatego/internal/health"
 	"generatego/internal/httpserver/router"
 	"generatego/internal/platform/datastore"
+	"generatego/internal/platform/healthcheck"
+	"generatego/internal/port"
 	"generatego/internal/repository"
 	"generatego/internal/service"
+	"generatego/internal/tokenservice"
 	"generatego/pkg/jwt"
 	"generatego/pkg/util"
 )
@@ -24,6 +28,7 @@ type App struct {
 	server *http.Server
 	dbs    datastore.Databases
 	redis  *datastore.RedisClient
+	ready  *health.State
 }
 
 func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {
@@ -53,10 +58,30 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, err
 		return nil, fmt.Errorf("connect Redis: %w", err)
 	}
 
-	repos := repository.NewRegistry(dbs, redisClient)
-	services := service.NewRegistry(repos, tokenService, logger)
+	userRepo := repository.NewUserRepository(dbs)
+	redisRepo := repository.NewRedisRepository(redisClient)
+	var tokens port.TokenService
+	if tokenService != nil {
+		tokens = tokenservice.NewJWTService(tokenService)
+	}
+	services := service.NewRegistry(userRepo, redisRepo, redisRepo, tokens, logger)
 
-	router := router.NewRouter(cfg, logger, services, redisClient, tokenService)
+	checkers := healthcheck.NewDatabaseCheckers(dbs, true)
+	checkers = append(
+		checkers,
+		healthcheck.NewRedisChecker(
+			redisClient,
+			cfg.Auth.Enabled || cfg.Redis.Enabled,
+		),
+	)
+	readyState := health.NewState(true)
+	readiness := health.NewService(
+		checkers,
+		cfg.HTTP.RequestTimeout,
+		readyState,
+	)
+
+	router := router.NewRouter(cfg, logger, services, redisRepo, tokens, readiness)
 	return &App{
 		cfg:    cfg,
 		logger: logger,
@@ -69,6 +94,7 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, err
 		},
 		dbs:   dbs,
 		redis: redisClient,
+		ready: readyState,
 	}, nil
 }
 
@@ -88,6 +114,11 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		// 先摘除 readiness，再停止 HTTP 服务，给负载均衡器留出摘流时间。
+		if a.ready != nil {
+			a.ready.SetReady(false)
+		}
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 

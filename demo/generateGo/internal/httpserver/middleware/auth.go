@@ -1,24 +1,29 @@
 package middleware
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 
+	"generatego/internal/port"
 	"generatego/pkg/apperror"
 	"generatego/pkg/constant"
-	"generatego/pkg/jwt"
 	"generatego/pkg/response"
 )
 
 type AuthConfig struct {
-	skip bool `comment:"没有Authorization是否跳过验证"`
+	enabled bool
+	skip    bool `comment:"没有Authorization是否跳过验证"`
 }
 type AuthOption func(*AuthConfig)
+
+func WithEnabled(enabled bool) AuthOption {
+	return func(c *AuthConfig) {
+		c.enabled = enabled
+	}
+}
 
 func WithSkip() AuthOption {
 	return func(c *AuthConfig) {
@@ -26,11 +31,16 @@ func WithSkip() AuthOption {
 	}
 }
 
-func Auth(redisClient *redis.Client, tokenService *jwt.Service, opts ...AuthOption) gin.HandlerFunc {
+func Auth(sessions port.SessionStore, tokenService port.TokenService, opts ...AuthOption) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cfg := AuthConfig{}
+		cfg := AuthConfig{enabled: true}
 		for _, opt := range opts {
 			opt(&cfg)
+		}
+
+		if !cfg.enabled {
+			c.Next()
+			return
 		}
 
 		header := strings.TrimSpace(c.GetHeader("Authorization"))
@@ -44,7 +54,7 @@ func Auth(redisClient *redis.Client, tokenService *jwt.Service, opts ...AuthOpti
 			response.WriteError(c, apperror.ServiceUnavailable("JWT 认证服务未配置"))
 			return
 		}
-		if redisClient == nil {
+		if sessions == nil {
 			c.Abort()
 			response.WriteError(c, apperror.ErrRedisDisabled)
 			return
@@ -57,33 +67,28 @@ func Auth(redisClient *redis.Client, tokenService *jwt.Service, opts ...AuthOpti
 			return
 		}
 
-		claims, err := tokenService.ParseToken(token)
+		principal, err := tokenService.Verify(c.Request.Context(), token)
 		if err != nil {
 			c.Abort()
 			response.WriteError(c, apperror.Unauthorized("认证令牌无效或已过期"))
 			return
 		}
 
-		tokenKey := constant.AuthUserKey + ":" + strconv.FormatInt(claims.UserInfo.Id, 10)
-		cacheToken, err := redisClient.Get(c.Request.Context(), tokenKey).Result()
+		tokenKey := constant.AuthUserKey + ":" + strconv.FormatInt(principal.UserID, 10)
+		cacheToken, found, err := sessions.Get(c.Request.Context(), tokenKey)
 		if err != nil {
-			if errors.Is(err, redis.Nil) {
-				c.Abort()
-				response.WriteError(c, apperror.Unauthorized("认证令牌无效或已过期"))
-				return
-			}
 			c.Abort()
 			response.WriteError(c, apperror.Wrap(err, http.StatusServiceUnavailable, "认证服务暂不可用"))
 			return
 		}
 
-		if cacheToken != token {
+		if !found || cacheToken != token {
 			c.Abort()
 			response.WriteError(c, apperror.Unauthorized("认证令牌无效或已过期"))
 			return
 		}
 
-		setCtx(c, constant.AuthUserKey, claims.UserInfo)
+		setCtx(c, constant.AuthUserKey, principal)
 		c.Next()
 	}
 }

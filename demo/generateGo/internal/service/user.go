@@ -7,10 +7,9 @@ import (
 	"strconv"
 
 	"generatego/internal/model"
-	"generatego/internal/repository"
+	"generatego/internal/port"
 	"generatego/pkg/apperror"
 	"generatego/pkg/constant"
-	"generatego/pkg/jwt"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -18,17 +17,17 @@ import (
 
 type UserService struct {
 	*BaseService
-	repo  *repository.UserRepository
-	redis *repository.RedisRepository
-	token *jwt.Service
+	repo     port.UserRepository
+	sessions port.SessionStore
+	tokens   port.TokenService
 }
 
-func NewUserService(repo *repository.UserRepository, redis *repository.RedisRepository, token *jwt.Service, logger *zap.Logger) *UserService {
+func NewUserService(repo port.UserRepository, sessions port.SessionStore, tokens port.TokenService, logger *zap.Logger) *UserService {
 	return &UserService{
 		BaseService: &BaseService{Logger: logger},
 		repo:        repo,
-		redis:       redis,
-		token:       token,
+		sessions:    sessions,
+		tokens:      tokens,
 	}
 }
 
@@ -45,18 +44,18 @@ func (u *UserService) Create(ctx context.Context, body model.CreateUser) (int64,
 		Status:   1,
 	}
 
-	result := u.repo.CreateUser(ctx, user)
-	if result.Error != nil {
-		return 0, result.Error
+	rows, err := u.repo.CreateUser(ctx, user)
+	if err != nil {
+		return 0, err
 	}
-	return result.RowsAffected, nil
+	return rows, nil
 }
 
 func (u *UserService) Login(ctx context.Context, body model.UserLogin) (string, error) {
-	if !u.redis.Enabled() {
+	if u.sessions == nil {
 		return "", apperror.ErrRedisDisabled
 	}
-	if u.token == nil {
+	if u.tokens == nil {
 		return "", apperror.ServiceUnavailable("JWT 认证服务未配置")
 	}
 
@@ -69,18 +68,17 @@ func (u *UserService) Login(ctx context.Context, body model.UserLogin) (string, 
 		return "", apperror.Unauthorized("用户名或密码错误")
 	}
 
-	info := jwt.UserInfo{
-		Id:   user.Id,
-		Name: user.Username,
+	principal := port.Principal{
+		UserID:   user.Id,
+		Username: user.Username,
 	}
-	token, err := u.token.GenerateToken(info)
+	token, expireDuration, err := u.tokens.Issue(ctx, principal)
 	if err != nil {
 		return "", apperror.Wrap(err, http.StatusInternalServerError, "生成认证令牌失败")
 	}
 
-	tokenKey := constant.AuthUserKey + ":" + strconv.FormatInt(info.Id, 10)
-	expireDuration := u.token.Expiry()
-	if err := u.redis.Set(ctx, tokenKey, token, expireDuration); err != nil {
+	tokenKey := constant.AuthUserKey + ":" + strconv.FormatInt(principal.UserID, 10)
+	if err := u.sessions.Set(ctx, tokenKey, token, expireDuration); err != nil {
 		if errors.Is(err, apperror.ErrRedisDisabled) {
 			return "", err
 		}
@@ -92,7 +90,7 @@ func (u *UserService) Login(ctx context.Context, body model.UserLogin) (string, 
 
 func (u *UserService) List(ctx context.Context, query model.GetUser) ([]model.GetUserRes, error) {
 	if userInfo, ok := u.Userinfo(ctx); ok {
-		u.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.Id))
+		u.CtxLog(ctx).Debug("current user", zap.Int64("id", userInfo.UserID))
 	}
 
 	queryOpt := model.GetUserListOption{
