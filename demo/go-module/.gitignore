@@ -1,0 +1,19 @@
+.git
+.idea
+.vscode
+
+bin
+dist
+tmp
+coverage
+
+*.log
+
+Dockerfile
+docker-compose.yml
+
+.env
+
+
+# docs
+swdocs/
