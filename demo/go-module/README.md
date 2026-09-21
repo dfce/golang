@@ -105,7 +105,7 @@ internal/modules/user/
 - `model.go`：当前业务模块的持久化模型或领域模型。
 - `module.go`：组装本模块的 Repository、Service、Handler 和 Router。
 
-业务模块自己的 DTO 应放在该模块的 `schema.go` 中，不建议将用户、订单等业务 DTO 继续集中放入全局 `internal/models`。数据库模型也不应直接作为 API 响应，尤其不能将密码等敏感字段返回给客户端。
+业务模块自己的 DTO 应放在该模块的 `schema.go` 中。数据库模型不应直接作为 API 响应，尤其不能将密码等敏感字段返回给客户端。
 
 ## 本地启动
 
@@ -409,9 +409,6 @@ go build ./cmd/server
 
 ## 后续优化项
 
-- 清理 `internal/models/user.go` 中遗留的业务 DTO，只保留持久化模型。
-- 将业务持久化模型按模块归属，减少全局 `internal/models` 耦合。
 - 将 `/health` 和依赖检查拆分为 `livez`、`readyz`。
-- 用单一 Zap Access Log 替代 Gin 默认请求日志。
 - 增加生产环境版本化数据库迁移。
 - 增加 CI、集成测试和依赖服务容器化配置。
