@@ -45,3 +45,39 @@ func (h *Handler) Create(c *gin.Context) {
 
 	response.JSON(c, http.StatusCreated, CreateUserRes{ID: userID})
 }
+
+// UserLogin 用户登录获取token
+// @Summary 用户登录获取token
+// @Description 用户登录获取token
+// @Tags User模块
+// @Accept json
+// @Produce json
+// @Param body body UserLogin true "登录请求体"
+// @Success 201 {object} response.Body{data=UserLoginRes} "创建成功"
+// @Failure 400 {object} response.Body{data=string} "请求参数不合法"
+// @Failure 500 {object} response.Body "服务器内部错误"
+//
+// @Router /user/login [post]
+func (h *Handler) Login(c *gin.Context) {
+	body, msg, err := validator.Validate[UserLogin](c, binding.JSON)
+	if err != nil {
+		response.ValidationError(c, msg)
+		return
+	}
+
+	token, err := h.service.Login(c.Request.Context(), *body)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	response.JSON(c, http.StatusCreated, UserLoginRes{Token: token})
+}
+
+func (h *Handler) Info(c *gin.Context) {
+
+}
+
+func (h *Handler) List(c *gin.Context) {
+
+}

@@ -14,11 +14,11 @@ type Module struct {
 	router *Router
 }
 
-func NewModule(db *gorm.DB, redis *datastore.RedisClient, logger *zap.Logger, tokenService *jwt.Service) *Module {
+func NewModule(db *gorm.DB, redis *datastore.RedisSvc, logger *zap.Logger, tokenService *jwt.Service) *Module {
 	repo := NewRepository(db)
-	svc := NewService(repo, logger)
+	svc := NewService(repo, logger, tokenService, redis)
 	handler := NewHandler(svc)
-	router := NewRouter(handler)
+	router := NewRouter(handler, redis, tokenService)
 
 	return &Module{svc: svc, router: router}
 }

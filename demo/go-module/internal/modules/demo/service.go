@@ -21,7 +21,7 @@ type DemoService struct {
 	tokenService *jwt.Service
 }
 
-func NewDemoService(repo *DemoRepository, redis *datastore.RedisClient, logger *zap.Logger, tokenService *jwt.Service) *DemoService {
+func NewDemoService(repo *DemoRepository, redis *datastore.RedisSvc, logger *zap.Logger, tokenService *jwt.Service) *DemoService {
 	return &DemoService{
 		BaseService:  &base.BaseService{Logger: logger},
 		repo:         repo,

@@ -229,12 +229,74 @@ type CreateUser struct {
 }
 ```
 
-其中：
+DTO 字段说明建议按以下顺序补齐：
+
+1. 字段前写 Go 注释，用于生成 Swagger 字段 `description`。
+2. `json` 或 `form` 定义 HTTP 入参/出参字段名。
+3. `binding` 定义运行时校验规则。
+4. Swagger 标签补充文档展示信息，例如 `format`、`example`、`minLength`。
+
+字段标签说明：
+
+| 标签 | 用途 | 示例 | 说明 |
+| --- | --- | --- | --- |
+| `json` | JSON 请求体或响应体字段名 | `json:"username"` | 用于 `application/json` 请求体绑定和响应序列化；`json:"email,omitempty"` 表示空值时响应可省略 |
+| `form` | Query 或 Form 字段名 | `form:"page"` | 用于 `GET ?page=1`、`application/x-www-form-urlencoded` 等参数绑定 |
+| `binding` | Gin/validator 运行时校验 | `binding:"required,min=3,max=50"` | Handler 调用 `validator.Validate` 或 `ShouldBind...` 时生效；同时会被 `swag` 解析出部分 Swagger 约束 |
+| `validate` | validator 校验规则 | `validate:"required,email"` | 与 `binding` 规则语义接近；当前项目优先使用 `binding`，避免同一字段校验规则分散 |
+| `comment` | 当前项目自定义校验提示名 | `comment:"用户名"` | `internal/platform/validator` 会优先用它生成中文错误信息，例如 `[用户名] 必填，不能为空` |
+| `minLength` | Swagger 字符串最小长度 | `minLength:"3"` | 只影响文档，不负责运行时校验；运行时仍要写 `binding:"min=3"` |
+| `maxLength` | Swagger 字符串最大长度 | `maxLength:"50"` | 只影响文档，不负责运行时校验；运行时仍要写 `binding:"max=50"` |
+| `minimum` | Swagger 数值最小值 | `minimum:"1"` | 只影响文档；运行时用 `binding:"gte=1"` 或 `binding:"gt=0"` |
+| `maximum` | Swagger 数值最大值 | `maximum:"100"` | 只影响文档；运行时用 `binding:"lte=100"` 或 `binding:"lt=101"` |
+| `format` | Swagger 字段格式 | `format:"email"` | 常见值：`email`、`password`、`uuid`、`date-time`；主要用于文档和客户端代码生成 |
+| `example` | Swagger 示例值 | `example:"alice"` | Swagger UI 展示示例；需要符合字段类型，数字和布尔值不要写成非对应类型 |
+| `default` | Swagger 默认值 | `default:"20"` | 文档默认值，不会自动填充请求参数；业务仍需在代码中设置默认值 |
+| `enums` | Swagger 枚举值 | `enums:"1,2"` | 用于状态、类型等固定可选值；运行时建议配合 `binding:"oneof=1 2"` |
+| `format` + `binding` | 格式说明和实际校验 | `format:"email" binding:"omitempty,email"` | `format` 只描述文档，`binding:"email"` 才执行邮箱校验 |
+
+`binding` 常用规则：
+
+| 规则 | 用法 | 说明 |
+| --- | --- | --- |
+| `required` | `binding:"required"` | 必填；字符串不能为空，指针/切片/map 不能为 nil |
+| `omitempty` | `binding:"omitempty,email"` | 空值时跳过后续校验；可选字段常用 |
+| `min` | `binding:"min=3"` | 字符串最小长度、数组最小数量、数值最小值 |
+| `max` | `binding:"max=50"` | 字符串最大长度、数组最大数量、数值最大值 |
+| `gt` | `binding:"gt=0"` | 数值必须大于指定值 |
+| `gte` | `binding:"gte=1"` | 数值必须大于等于指定值 |
+| `lt` | `binding:"lt=100"` | 数值必须小于指定值 |
+| `lte` | `binding:"lte=100"` | 数值必须小于等于指定值 |
+| `len` | `binding:"len=6"` | 长度必须等于指定值 |
+| `email` | `binding:"omitempty,email"` | 邮箱格式校验 |
+| `url` | `binding:"omitempty,url"` | URL 格式校验 |
+| `uuid` / `uuid4` | `binding:"required,uuid4"` | UUID 格式校验 |
+| `numeric` | `binding:"numeric"` | 字符串只能包含数字 |
+| `alphanum` | `binding:"alphanum"` | 字符串只能包含字母和数字 |
+| `oneof` | `binding:"oneof=1 2"` | 枚举校验；字符串枚举可写 `binding:"oneof=admin user guest"` |
+| `datetime` | `binding:"datetime=2006-01-02"` | 指定日期时间格式 |
+| `eqfield` | `binding:"eqfield=Password"` | 必须与同结构体中的另一个字段相等，常用于确认密码 |
+
+建议写法：
+
+```go
+type GetUser struct {
+    // 页码，从 1 开始。
+    Page int `form:"page" json:"page" binding:"omitempty,gte=1,lte=100000" minimum:"1" default:"1" example:"1" comment:"页码"`
+    // 每页数量，范围 1-100。
+    Size int `form:"size" json:"size" binding:"omitempty,gte=1,lte=100" minimum:"1" maximum:"100" default:"20" example:"20" comment:"页大小"`
+}
+```
+
+注意事项：
 
 - `binding:"required,min=...,max=..."` 同时用于 Gin 参数校验和 Swagger 的必填、长度限制。
 - `format:"email"`、`format:"password"` 描述字段格式。
 - `example:"..."` 提供 Swagger UI 示例值。
 - 字段前的 Go 注释会生成字段 `description`。
+- `comment:"..."` 用于当前项目校验错误提示，不等同于 Swagger 字段描述。
+- Swagger 标签只负责文档，不能替代运行时校验；运行时校验必须写在 `binding` 或业务逻辑中。
+- 数据库唯一约束、外键约束等不能只靠 DTO 校验表达，仍应在数据库错误处理中转换为业务错误。
 
 统一响应结构中的 `data` 是 `any`，需要在接口注解中指定真实类型：
 

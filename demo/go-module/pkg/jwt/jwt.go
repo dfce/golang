@@ -3,6 +3,7 @@ package jwt
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
@@ -65,6 +66,11 @@ func (s *Service) GenerateToken(info UserInfo) (string, error) {
 }
 
 func (s *Service) ParseToken(tokenStr string) (*Claims, error) {
+	tokenStr = strings.TrimSpace(tokenStr)
+	if tokenStr == "" {
+		return nil, errors.New("JWT token is empty")
+	}
+
 	claims := &Claims{}
 	options := []jwtv5.ParserOption{
 		jwtv5.WithValidMethods([]string{jwtv5.SigningMethodHS256.Alg()}),
@@ -88,8 +94,13 @@ func (s *Service) ParseToken(tokenStr string) (*Claims, error) {
 		},
 		options...,
 	)
-	if err != nil || !token.Valid {
-		return nil, errors.New("invalid token")
+	if err != nil {
+		// Keep the original jwt error for server-side diagnostics. Callers should
+		// still expose only a generic authentication error to the client.
+		return nil, fmt.Errorf("parse JWT token: %w", err)
+	}
+	if token == nil || !token.Valid {
+		return nil, errors.New("JWT token is invalid")
 	}
 
 	return claims, nil

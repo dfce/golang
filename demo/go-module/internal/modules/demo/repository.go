@@ -9,10 +9,10 @@ import (
 
 type DemoRepository struct {
 	db    *gorm.DB
-	redis *datastore.RedisClient
+	redis *datastore.RedisSvc
 }
 
-func NewDemoRepository(db *gorm.DB, redis *datastore.RedisClient) *DemoRepository {
+func NewDemoRepository(db *gorm.DB, redis *datastore.RedisSvc) *DemoRepository {
 	return &DemoRepository{db, redis}
 }
 

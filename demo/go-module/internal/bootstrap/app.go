@@ -20,7 +20,7 @@ type App struct {
 	logger *zap.Logger
 	server *http.Server
 	dbs    datastore.Databases
-	redis  *datastore.RedisClient
+	redis  *datastore.RedisSvc
 }
 
 func New(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*App, error) {

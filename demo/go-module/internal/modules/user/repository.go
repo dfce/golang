@@ -53,3 +53,20 @@ func (repo *Repository) Create(ctx context.Context, user *model.User) (int64, er
 	}
 	return user.Id, nil
 }
+
+func (r *Repository) GetByUserame(ctx context.Context, username string) (*model.User, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).
+		// Select("*").
+		Select("id", "username", "password").
+		Where("username = ?", username).
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}

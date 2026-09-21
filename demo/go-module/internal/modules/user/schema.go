@@ -24,6 +24,12 @@ type UserLogin struct {
 	Password string `json:"password" binding:"required,min=8,max=72" minLength:"8" maxLength:"72" format:"password" example:"ChangeMe123!"`
 }
 
+// 登录响应体
+type UserLoginRes struct {
+	// 授权认证Token
+	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywidXNlck5hbWUiOiJkZW1vLXRlc3QiLCJpc3MiOiJnby1tb2R1bGUiLCJleHAiOjE3ODk5ODkxMTcsImlhdCI6MTc4OTk4MTkxN30.j_n6F1fDoiAOajlU_RiPQl0Wmpls_8A5mM5RXuqAaKE" comment:"授权认证Token"`
+}
+
 // GetUser 用户列表查询参数。
 type GetUser struct {
 	// 页码，从 1 开始。

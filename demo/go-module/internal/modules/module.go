@@ -27,7 +27,7 @@ type AppModule interface {
 func BuildAppEngine(
 	cfg *config.Config,
 	dbs datastore.Databases,
-	redis *datastore.RedisClient,
+	redis *datastore.RedisSvc,
 	logger *zap.Logger,
 	tokenService *jwt.Service,
 ) *gin.Engine {
