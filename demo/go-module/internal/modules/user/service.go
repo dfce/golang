@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	model "go-module/internal/models"
 	"go-module/internal/platform/datastore"
 	"go-module/pkg/apperror"
@@ -14,6 +15,7 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type UserSvc struct {
@@ -107,4 +109,20 @@ func (s *UserSvc) Login(ctx context.Context, body UserLogin) (string, error) {
 
 func (s *UserSvc) List(ctx context.Context) {
 
+}
+
+// 事务加锁用户处理
+func (s *UserSvc) LockActiveUser(ctx context.Context, tx *gorm.DB, userID int64) error {
+	if tx == nil {
+		return errors.New("transaction is required")
+	}
+
+	_, err := s.repo.LockByID(ctx, tx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.Unauthorized("用户不存在")
+		}
+		return err
+	}
+	return nil
 }

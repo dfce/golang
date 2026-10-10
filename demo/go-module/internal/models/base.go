@@ -10,4 +10,7 @@ type Base struct {
 
 var Models = []any{
 	&User{},
+	&Currency{},
+	&Order{},
+	&Wallet{},
 }

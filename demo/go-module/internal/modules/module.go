@@ -6,6 +6,7 @@ import (
 	"go-module/internal/config"
 	"go-module/internal/middleware"
 	demo "go-module/internal/modules/demo"
+	"go-module/internal/modules/payment"
 	user "go-module/internal/modules/user"
 	"go-module/internal/platform/datastore"
 	"go-module/pkg/jwt"
@@ -43,7 +44,16 @@ func BuildAppEngine(
 	// B. 如果有循环依赖/Setter对拧，也在这里处理(Setter 注入模式)
 	// demoModule.SetSomeServices(orderModule.Service())
 	// demoModule.SetSomeServices({orderService: orderModule.Service(), userService: userMOdule.Service()}) // 待验证
+
 	// C. 实例化上层聚合模块(传入基础模块的标准 Service 接口)
+	// paymentModule 集合了 user wallet order的service
+	paymentModule := payment.NewModule(
+		db, redis, logger, tokenService,
+		payment.Dependencies{
+			User: userModule.Service(),
+			// Wallet: walletModule.Service(),
+		},
+	)
 
 	// ==================================================
 	// 2. 初始化 Web 引擎并注册全量路由
@@ -93,6 +103,7 @@ func BuildAppEngine(
 	modules := []AppModule{
 		demoModule,
 		userModule,
+		paymentModule,
 	}
 
 	for _, module := range modules {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository struct {
@@ -65,6 +66,21 @@ func (r *Repository) GetByUserame(ctx context.Context, username string) (*model.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (r *Repository) LockByID(ctx context.Context, tx *gorm.DB, userID int64) (*model.User, error) {
+	var user model.User
+
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", userID).
+		First(&user).Error
+
+	if err != nil {
 		return nil, err
 	}
 

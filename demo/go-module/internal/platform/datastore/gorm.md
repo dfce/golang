@@ -34,6 +34,10 @@ func InitDB() *gorm.DB {
 	return db
 }
 
+// Index Tag 的完整形式
+gorm:"index:索引名称,priority:优先级,sort:排序方式,type:索引类型,where:条件,comment:注释,option:额外选项"
+// 例：
+Name string `gorm: "type:varchar(50);not nil;default:'';index:idx_user_name,unique"`
 
 /* 
   增 Create 

@@ -66,7 +66,7 @@ func printfRequestInfo(c *gin.Context, logger *zap.Logger) {
 		logInfo = append(logInfo, zap.Any("request_info", info))
 	}
 
-	logger.Debug("", logInfo...)
+	logger.Debug("\n\n\n ********* Request", logInfo...)
 }
 
 func getPostData(c *gin.Context, logger *zap.Logger, info *ReqInfo, hasReqInfo *bool) {
